@@ -1,0 +1,79 @@
+<html>
+
+<head>
+
+    <script type="test/javascript" src="https://cdn.jsdelivr.net/npm/lodash@4.17.10/throttle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.js"></script>
+    <script src="assets/mqtt_simplified.js"></script>
+    <script type="text/javascript">
+
+        var mqtt_client = new MQTTClientSimplified('lubuntuKafka',9001,'10');        
+        console.log(mqtt_client);
+
+        function device_motion_handler(event){
+            
+            device_motions = {
+                "accel_x":event.accelerationIncludingGravity.x,
+                "accel_y":event.accelerationIncludingGravity.y,
+                "accel_z":event.accelerationIncludingGravity.z,
+            };
+
+            document.getElementById('test').innerHTML = 
+                    "accel_x: " + device_motions['accel_x'] + event.acceleration.x;
+
+            if (mqtt_client.connected){
+                mqtt_client.send_mqtt_msg(JSON.stringify(device_motions),'test');
+
+            }
+
+            console.log(event);
+        }
+
+        function actThenThrottleEvents(listener, delay) {
+            var timeout;
+            return function(e) {
+                if (!timeout) { // no timer running
+                listener(e); // run the function
+                timeout = setTimeout( function() { timeout = null }, 
+                    delay); // start a timer that turns itself off when it's done
+                }  
+                //else, do nothing (we're in a throttling stage)
+            }
+        }
+
+
+        function test_listener(event){
+            document.getElementById('test2').innerHTML = event.keyCode;
+            if (mqtt_client.connected){
+                mqtt_client.send_mqtt_msg(event.keyCode,'test');
+
+            }
+        }
+
+        function start_logging(){
+            if (window.DeviceMotionEvent) {
+                window.addEventListener('devicemotion',actThenThrottleEvents(device_motion_handler,500));
+            }
+            
+            window.addEventListener('keypress', actThenThrottleEvents(test_listener,200));
+            
+
+
+        }
+        
+    </script>
+
+</head>
+
+<body onload="start_logging()">
+    <div id='test'></div>
+    <div id='test2'></div>
+    <form id='form'>
+        <input type='text'>
+    </form>
+
+</body>
+
+
+
+</html>
