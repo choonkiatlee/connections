@@ -1,26 +1,38 @@
-#ifndef __BLE_ACCELEROMETER_SERVICE_H__
-#define __BLE_ACCELEROMETER_SERVICE_H__
- 
-class AccelerometerService {
+#include "mbed.h"
+
+
+#ifndef __BLE_LED_SERVICE_H__
+#define __BLE_LED_SERVICE_H__
+
+class MetaDataService {
 public:
-    const static uint16_t ACCEL_SERVICE_UUID              = 0xA000;
-    const static uint16_t ACCEL_STATE_CHARACTERISTIC_UUID = 0xA001;
- 
-    AccelerometerService(BLE &_ble, bool buttonPressedInitial) :
-        ble(_ble), accelState(ACCEL_STATE_CHARACTERISTIC_UUID, &buttonPressedInitial, GattCharacteristic::BLE_GATT_CHAR_PROPERTIES_NOTIFY)
+    
+    const static uint16_t CUSTOM_SERVICE_UUID           = 0xA000;
+    const static uint16_t DEVICE_MQTT_NAME_UUID         = 0xA001;
+    const static uint16_t DEVICE_DATA_LAYOUT_UUID       = 0xA002;
+    const static uint16_t READ_BOOL_UUID                = 0xA003;
+
+    MetaDataService(BLEDevice &_ble, char* deviceName, char* deviceDataLayout, bool read_bool) :
+        ble(_ble), 
+        deviceNameChar(DEVICE_MQTT_NAME_UUID, deviceName),
+        deviceDataLayoutChar(DEVICE_DATA_LAYOUT_UUID, deviceDataLayout),
+        readChar(READ_BOOL_UUID,read_bool)
     {
-        GattCharacteristic *charTable[] = {&accelState};
-        GattService         buttonService(AccelerometerService::ACCEL_SERVICE_UUID, charTable, sizeof(charTable) / sizeof(GattCharacteristic *));
-        ble.gattServer().addService(buttonService);
+        GattCharacteristic *charTable[] = {&deviceNameChar, &deviceDataLayoutChar, &readChar};
+        GattService         metadataService(CUSTOM_SERVICE_UUID, charTable, sizeof(charTable) / sizeof(GattCharacteristic *));
+        ble.addService(metadataService);
     }
- 
-    void updateAccelState(bool newState) {
-        ble.gattServer().write(accelState.getValueHandle(), (uint8_t *)&newState, sizeof(bool));
+
+    GattAttribute::Handle_t getValueHandle() const
+    {
+        return ledState.getValueHandle();
     }
- 
+
 private:
-    BLE                              &ble;
-    ReadOnlyGattCharacteristic<bool>  accelState;
+    BLEDevice                         &ble;
+    ReadWriteGattCharacteristic<char *> deviceName;
+    ReadWriteGattCharacteristic<char *> deviceDataLayout;
+    ReadWriteGattCharacteristic<bool> deviceName;
 };
- 
-#endif /* #ifndef __BLE_ACCELEROMETER_SERVICE_H__ */
+
+#endif /* #ifndef __BLE_LED_SERVICE_H__ */

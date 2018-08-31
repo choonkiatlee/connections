@@ -3,7 +3,6 @@
     #include "ble/GapAdvertisingData.h"
 
     #include "MMA8652.h"
-    #include "ble_message.h"
 
     
     /* Optional: Device Name, add for human read-ability */
@@ -20,9 +19,6 @@
     MMA8652 acc( p20, p19);
     float acc_data[3];
     Serial pc(USBTX, USBRX);
-
-    BLEMessage msg;
-    
 
 
     /* Optional: Restart advertising when peer disconnects */
@@ -82,8 +78,23 @@
     
         /* Start advertising */
         ble.gap().startAdvertising();
+    }
 
-        msg.set_message_headers(BLEMessage::DATA);
+
+    void readAccelSensors(BLE* ble, float * acc_data)
+    {
+        acc.ReadXYZ(acc_data); 
+
+        memset(&buffer[0], 0, sizeof(buffer));      //clear out buffer
+        uint8_t total_chars =  sprintf (buffer, "%4.2f %4.2f %4.2f", acc_data[0], acc_data[1], acc_data[2]);
+
+        ble->gap().accumulateAdvertisingPayload(GapAdvertisingData::MANUFACTURER_SPECIFIC_DATA, (uint8_t* ) buffer, sizeof(buffer));
+        ble->gap().startAdvertising();
+
+        /* Note that the periodicCallback() executes in interrupt context, 
+        * so it is safer to do
+        * heavy-weight sensor polling from the main thread. */
+        triggerSensorPolling = false; // sets TRUE and returns to main()
     }
     
     int main(void)
@@ -100,15 +111,12 @@
 
             //wait for broadcast a new packet every 10 seconds
             wait(1.0);
-            acc.ReadXYZ(acc_data);
+            acc.ReadXYZ(&ble, acc_data);
             
             memset(&buffer[0], 0, sizeof(buffer));      //clear out buffer
             uint8_t total_chars =  sprintf (buffer, "%4.2f %4.2f %4.2f", acc_data[0], acc_data[1], acc_data[2]);
             
-            msg.set_message_data(buffer, 20);
-
-
-            ble.gap().accumulateAdvertisingPayload(GapAdvertisingData::MANUFACTURER_SPECIFIC_DATA, (uint8_t* ) msg.message, sizeof(msg.message));
+            ble.gap().accumulateAdvertisingPayload(GapAdvertisingData::MANUFACTURER_SPECIFIC_DATA, (uint8_t* ) buffer, sizeof(buffer));
             ble.gap().startAdvertising();
             
             

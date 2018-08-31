@@ -1,6 +1,13 @@
 from bluepy.btle import Scanner, DefaultDelegate
 import binascii
 
+def strip_trailing_nulls(input_bytes):
+    output_bytes = []
+    i = input_bytes.find(b'\x00')
+    if i == -1:
+        return input_bytes
+    return input_bytes[:i]
+
 class ScanDelegate(DefaultDelegate):
     def __init__(self):
         DefaultDelegate.__init__(self)
@@ -17,12 +24,13 @@ class ScanDelegate(DefaultDelegate):
                     print ('{0}'.format(binascii.unhexlify(value)))
                 if dev.addr == 'f5:5d:fe:85:6e:24' and desc == 'Manufacturer':
                     with open('savefile.log', 'a') as outfile:
-                        outfile.write('{0}\n'.format(binascii.unhexlify(value)))
+                        byte_data = strip_trailing_nulls(binascii.unhexlify(value))
+                        outfile.write('{0}\n'.format(byte_data.decode('ascii')))
 
 scanner = Scanner().withDelegate(ScanDelegate())
 
 while True:
-    devices = scanner.scan(5.0)
+    devices = scanner.scan(1.0)
 
 '''
 for dev in devices:
