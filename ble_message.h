@@ -40,13 +40,19 @@ class BLEMessage{
             NO_ERROR = 0
         };
 
-        void set_message_headers(BLEMessage::MessageType_t message_type);
+        void set_message_headers(BLEMessage::MessageType_t message_type, const char * deviceMQTTName, const char * deviceDataLayout);
+
+        void set_message_headers(BLEMessage::MessageType_t message_type, uint8_t* checksum);
 
         msg_error_t set_message_data(char * buffer, uint8_t buffer_len);
         
         void clear_message();
         
         void get_message_data(uint8_t *buffer, uint8_t buffer_len);
+
+        uint16_t get_djb2_hash(char* s);
+
+        void store_hash_into_bytes(const char * deviceMQTTName, const char * deviceDataLayout, char* output_buffer);
     
 };
 
@@ -58,10 +64,53 @@ void BLEMessage::clear_message()
     }
 }
 
-void BLEMessage::set_message_headers(BLEMessage::MessageType_t message_type )
+uint16_t BLEMessage::get_djb2_hash(char* s)
 {
-    message[0] = message_type;
+    /* https://stackoverflow.com/questions/1579721/why-are-5381-and-33-so-important-in-the-djb2-algorithm */
+    uint16_t hash = 5381;
+    int c;
+ 
+    while((c = *s++))
+    {
+        /* hash = hash * 33 ^ c */
+        hash = ((hash << 5) + hash) ^ c;
+        // the above line is an optimized version of the following line:
+        // hash = (hash * 33) xor c
+        // which is easier to read and understand...
+    }
+ 
+    return hash;
 }
+
+
+void BLEMessage::set_message_headers(BLEMessage::MessageType_t message_type, const char * deviceMQTTName, const char * deviceDataLayout)
+{
+
+    uint8_t* msg_ptr = message;
+    *msg_ptr = message_type;
+    msg_ptr++;
+
+    char * str_store = (char* ) malloc(1 + strlen(deviceMQTTName) + strlen(deviceDataLayout));
+
+    strcat(str_store, deviceMQTTName);
+    strcat(str_store, deviceDataLayout);
+
+    uint16_t hash = BLEMessage::get_djb2_hash(str_store);
+
+    for (int i = 0; i< sizeof(hash); i++){
+        *msg_ptr = (hash >> 8 * i) & 0xFF;
+        msg_ptr++;
+    }
+
+    free(str_store);
+}
+
+void BLEMessage::set_message_headers(BLEMessage::MessageType_t message_type, uint8_t* checksum) 
+{ 
+    *message = message_type; 
+    message++;
+    memcpy(message,checksum,2);
+} 
 
 BLEMessage::msg_error_t BLEMessage::set_message_data(char * buffer, uint8_t buffer_len)
 {
@@ -83,6 +132,25 @@ void BLEMessage::get_message_data(uint8_t *buffer, uint8_t buffer_len){
 
     memcpy(buffer, &message +6, buffer_len);
 }
+
+void BLEMessage::store_hash_into_bytes(const char * deviceMQTTName, const char * deviceDataLayout, char* output_buffer){
+    
+        uint8_t* msg_ptr = (uint8_t*) output_buffer;
+        
+        char * str_store = (char* ) malloc(1 + strlen(deviceMQTTName) + strlen(deviceDataLayout));
+
+        strcat(str_store, deviceMQTTName);
+        strcat(str_store, deviceDataLayout);
+
+        uint16_t hash = BLEMessage::get_djb2_hash(str_store);
+
+        for (int i = 0; i< sizeof(hash); i++){
+            *msg_ptr = (hash >> 8 * i) & 0xFF;
+            msg_ptr++;
+        }
+
+        free(str_store);
+    }
 
 #endif
 

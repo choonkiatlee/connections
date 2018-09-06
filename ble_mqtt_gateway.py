@@ -8,13 +8,15 @@ from collections import namedtuple
 
 
 class BLESensor:
+
+    search_re = re.compile(b'\|?(?P<field>.+?)\((?P<format>[a-z])\)')
+
     def __init__(self, device):
         self.device = device
         self.deviceMQTTName = ''
 
         self.deviceDataFormat = None
         self.struct_unpack_str = ''
-        self.search_re = re.compile(b'\|?(?P<field>.+?)\((?P<format>[a-z])\)')
     
     @staticmethod
     def strip_trailing_nulls(input_bytes):
@@ -22,7 +24,6 @@ class BLESensor:
         if i == -1:
             return input_bytes
         return input_bytes[:i]
-
 
     def interpret_device_data(self,input_bytes):
 
@@ -44,30 +45,53 @@ class BLESensor:
         readService = p.getServiceByUUID(readSensor)
         for ch in readService.getCharacteristics():
             if ch.uuid == btle.UUID("0000a001-0000-1000-8000-00805f9b34fb"):
-                deviceMQTTName = ch.read()
-                self.deviceMQTTName = self.strip_trailing_nulls(deviceMQTTName)
+                deviceMQTTName = self.strip_trailing_nulls(ch.read())
+                self.deviceMQTTName = deviceMQTTName
             elif ch.uuid == btle.UUID("0000a002-0000-1000-8000-00805f9b34fb"):
                 deviceData = self.strip_trailing_nulls(ch.read())
                 self.interpret_device_data(deviceData)
-
+            elif ch.uuid == btle.UUID("0000a003-0000-1000-8000-00805f9b34fb"):
+                self.checksum = self.strip_trailing_nulls(ch.read())
+            elif ch.uuid == btle.UUID("0000a004-0000-1000-8000-00805f9b34fb"):
+                ch.write(bytes.fromhex('01'))
         p.disconnect()
 
     def parse_device_data(self,input_bytes):
         
-        print(input_bytes, self.struct_unpack_str)
-        if self.deviceDataFormat:
-            unpacked = struct.unpack(self.struct_unpack_str,input_bytes)
-            return self.deviceDataFormat._make(unpacked)
+        if parse_heartbeat(input_bytes):
+            self.read_device_metadata()
         else:
-            return ''
 
+            # check checksum
+            checksum = input_bytes[1:3]
+            print(binascii.hexlify(checksum), self.checksum)
 
+            # obtain message_data
+            message_data = input_bytes[6:]
 
-def strip_trailing_nulls(input_bytes):
-    i = input_bytes.find(b'\x00')
-    if i == -1:
-        return input_bytes
-    return input_bytes[:i]
+            if self.deviceDataFormat:
+
+                # obtain only data required to unpack
+                required_byte_size = struct.calcsize(self.struct_unpack_str)
+                data_to_unpack = message_data[:required_byte_size]
+
+                # unpack and return tuple
+                unpacked = struct.unpack(self.struct_unpack_str,data_to_unpack)
+                return self.deviceDataFormat._make(unpacked)
+            else:
+                return ''
+
+    @staticmethod
+    def parse_heartbeat(input_bytes):
+
+        print(input_bytes[0])
+
+        checksum = input_bytes[1:3]
+        if (input_bytes[3:] == 'ble_beacon') and input_bytes[0] == b'1':
+            return True
+        else:
+            return False
+
 
 def strip_all_nulls(input_bytes):
     output_bytes = ''
@@ -90,6 +114,19 @@ class ScanDelegate(btle.DefaultDelegate):
 
     def handleDiscovery(self, dev, isNewDev, isNewData):
         
+        if isNewData:
+            #print("Received new data from {0}".format(dev.addr))
+            # if dev.addr == 'f5:5d:fe:85:6e:24':
+            current_device = self.discovered_devices[dev.addr]
+
+            print('Device_name: {0}'.format(current_device.deviceMQTTName))
+            for (adtype, desc, value) in dev.getScanData():
+                print ("  %s = %s" % (desc, value))
+                if desc == 'Manufacturer':
+                    data = binascii.unhexlify(value)
+                    print(current_device.parse_device_data(data))
+
+
         # If a new device is added, add it to the discovered_devices set
         if isNewDev:
 
@@ -98,22 +135,11 @@ class ScanDelegate(btle.DefaultDelegate):
                 print("Added Device {0}".format(dev.addr))
                 self.discovered_devices[dev.addr] = BLESensor(dev)
 
-                if dev.addr == 'f5:5d:fe:85:6e:24': 
-                    self.discovered_devices[dev.addr].read_device_metadata()
+                # if dev.addr == 'f5:5d:fe:85:6e:24': 
+                #     self.discovered_devices[dev.addr].read_device_metadata()
 
 
-        if isNewData:
-            #print("Received new data from {0}".format(dev.addr))
-            if dev.addr == 'f5:5d:fe:85:6e:24':
-
-                current_device = self.discovered_devices[dev.addr]
-
-                print('Device_name: {0}'.format(current_device.deviceMQTTName))
-                for (adtype, desc, value) in dev.getScanData():
-                    print ("  %s = %s" % (desc, value))
-                    if desc == 'Manufacturer':
-                        message_data = binascii.unhexlify(value)[6:]
-                        print(current_device.parse_device_data(message_data[:12]))
+        
 
             #To Do: Check CRC checksum to see if device name / data definitions have changed
 
